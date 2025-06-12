@@ -18,16 +18,16 @@ spec:
     spec:
       containers:
       - name: hw-app
-        image: host.minikube.internal:5000/hw-app:20
+        image: host.minikube.internal:5000/hw-app:1
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8000
           name: http
         resources:
-          limits:
-            memory: 512Mi
-            cpu: 500m
           requests:
-            memory: 256Mi
             cpu: 250m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
       restartPolicy: Always
