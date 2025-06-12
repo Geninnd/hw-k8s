@@ -3,6 +3,9 @@ kind: Deployment
 metadata:
   name: hw-app
   namespace: default
+  labels:
+    app: hw-app
+    environment: local
 spec:
   replicas: 1
   selector:
@@ -15,7 +18,16 @@ spec:
     spec:
       containers:
       - name: hw-app
-        image: localhost:5000/hw-app:18
+        image: localhost:5000/hw-app:19
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8000
-      imagePullPolicy: Always
+          name: http
+        resources:
+          limits:
+            memory: 512Mi
+            cpu: 500m
+          requests:
+            memory: 256Mi
+            cpu: 250m
+      restartPolicy: Always
