@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hw-app
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hw-app
+  template:
+    metadata:
+      labels:
+        app: hw-app
+    spec:
+      containers:
+      - name: hw-app
+        image: localhost:5000/hw-app:1
+        ports:
+        - containerPort: 8000
