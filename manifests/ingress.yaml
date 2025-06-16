@@ -2,6 +2,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: hw-app-ingress
+  namespace: hw-app
 spec:
   rules:
     - host: hw-app.local

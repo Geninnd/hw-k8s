@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: hw-app
-  namespace: default
+  namespace: hw-app
   labels:
     app: hw-app
     environment: local
@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: hw-app
-        image: host.minikube.internal:5000/hw-app:1
+        image: registry:5000/hw-app:1
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8000
