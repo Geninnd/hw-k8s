@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: hw-app
-        image: localhost:5000/hw-app:5
+        image: localhost:5000/hw-app:6
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8000
