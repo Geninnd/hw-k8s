@@ -1,166 +1,158 @@
 # Hello World App
 
-Este repositório contém tudo que você precisa para rodar o **Hello World App**, criar a imagem Docker e integrar com o Jenkins, ArgoCD e Kubernetes.
+Este repositório contém uma aplicação "Hello World" com uma pipeline de CI/CD utilizando Jenkins, ArgoCD e GitOps.
 
-## 0. Instalar ferramentas
+## Pré-requisitos
 
-- **Docker e dependências**:
-```bash
-sudo apt update
-sudo apt install -y git docker.io curl unzip
-sudo systemctl start docker
-sudo systemctl enable docker
-sudo usermod -aG docker $USER
-newgrp docker
-```
+- Sistema operacional baseado em Linux (testado em Ubuntu/Debian).
+- Acesso `sudo` para instalação de pacotes.
+- Uma conta no GitHub.
 
-- **kubectl**:
-```bash
-curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-sudo install -o root -g root -m 0755 kubectl /usr/local/bin/
-```
+## 1. Preparação dos Repositórios
 
-- **ArgoCD CLI**:
-```bash
-curl -sLO https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
-sudo install -o root -g root -m 0755 argocd-linux-amd64 /usr/local/bin/argocd
-```
+Antes de começar, você precisa ter sua própria cópia dos repositórios.
 
-- **ngrok** (para testes locais de webhook):
-```bash
-curl -sLo ngrok.zip https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-linux-amd64.zip
-unzip ngrok.zip && sudo mv ngrok /usr/local/bin
-```
+1.  **Faça um Fork** de ambos os repositórios para a sua conta do GitHub:
+    *   Repositório da Aplicação: `hw-app`
+    *   Repositório de Manifestos Kubernetes: `hw-k8s`
 
-- **Jenkins**:
-```bash
-docker pull jenkins/jenkins:lts
-```
+2.  **Clone o seu fork** da aplicação (`hw-app`) para a sua máquina local:
+    ```bash
+    git clone https://github.com/SEU_USUARIO/hw-app.git
+    cd hw-app
+    ```
+    Substitua `SEU_USUARIO` pelo seu nome de usuário do GitHub.
 
-### Verificar instalações
-```bash
-# Verificar versões
-docker --version
-kubectl version --client
-argocd version --client
-ngrok version
-docker inspect jenkins/jenkins:lts | grep -i version
-```
+## 2. Instalação e Configuração do Ambiente
 
-## 1. Clonar repositórios
+O ambiente de desenvolvimento (Minikube, Jenkins, ArgoCD, etc.) é configurado automaticamente por um único script.
 
-```bash
-git clone https://github.com/Geninnd/hw-app.git
-cd hw-app
-git clone https://github.com/Geninnd/hw-k8s.git ../hw-k8s
-```
+- **Execute o script de instalação:**
+  ```bash
+  chmod +x infra/install.sh
+  ./infra/install.sh
+  ```
+  Este comando irá baixar e configurar todas as ferramentas necessárias. O processo pode levar alguns minutos.
 
-## 2. Registry Docker local
+## 3. Configuração do Jenkins
 
-```bash
-docker run -d -p 5000:5000 --name registry registry:2
-```
+Após a instalação, você precisa configurar o Jenkins para que ele possa se comunicar com seus repositórios no GitHub.
 
-## 3. Jenkins (com Docker)
+### 3.1. Crie um Personal Access Token (PAT) no GitHub
 
-```bash
-docker run -d \
-  -p 8080:8080 \
-  -p 50000:50000 \
-  -v jenkins_home:/var/jenkins_home \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  --name jenkins jenkins/jenkins:lts
-```
+1.  Acesse a página de tokens do GitHub: [github.com/settings/tokens](https://github.com/settings/tokens).
+2.  Clique em **Generate new token** e selecione **Generate new token (classic)**.
+3.  Dê um nome para o token (ex: `jenkins-token`).
+4.  Selecione a data de expiração.
+5.  Marque o escopo **`repo`** (acesso total aos repositórios).
+6.  Clique em **Generate token** e **guarde o token em um local seguro**. Você não poderá vê-lo novamente.
 
-### 3.1 Configurar Jenkins
+### 3.2. Configure as Credenciais no Jenkins
 
-1. Acesse: [http://localhost:8080](http://localhost:8080)
-2. **Obter senha inicial**:
+1.  **Acesse o Jenkins**: Abra [http://localhost:8080](http://localhost:8080) no seu navegador.
 
-   ```bash
-   docker logs jenkins | grep 'Initial Admin Password'
-   ```
-3. Siga o wizard:
+2.  **Obtenha a senha inicial**: O script de instalação exibe a senha no final. Se precisar, execute o comando abaixo em seu terminal:
+    ```bash
+    docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+    ```
 
-   * Instale plugins recomendados: **GitHub**, **Pipeline**, **Docker Pipeline**
-   * Crie um usuário admin
+3.  **Configure as credenciais necessárias**:
+    - Vá para **Manage Jenkins → Credentials → System → Global credentials (unrestricted)**.
+    - Clique em **Add Credentials**.
 
-#### 3.1.1 Como obter o Personal Access Token (PAT) no GitHub
+    - **Credencial 1: GitHub (Usuário e Token)**
+      - **Kind**: `Username with password`
+      - **ID**: `github-credentials`
+      - **Description**: `Credenciais de acesso ao GitHub`
+      - **Username**: Seu nome de usuário do GitHub.
+      - **Password**: O Personal Access Token que você acabou de criar.
 
-1. No GitHub, clique no seu avatar → **Settings**
+    - **Credencial 2: URL do Repositório de Manifestos**
+      - **Kind**: `Secret text`
+      - **ID**: `manifests-repo-url`
+      - **Description**: `URL do repositório de manifestos`
+      - **Secret**: A URL do seu fork do `hw-k8s`, **sem** o `https://`.
+        - Exemplo: `github.com/SEU_USUARIO/hw-k8s.git`
 
-2. Vá em **Developer settings** → **Personal access tokens** → **Tokens (classic)**
+### 3.3. Crie o Pipeline
 
-3. Clique em **Generate new token**
+1.  Na página inicial do Jenkins, clique em **New Item**.
+2.  Dê um nome ao pipeline (ex: `hw-app`) e selecione **Pipeline**. Clique em **OK**.
+3.  Na aba **Pipeline**, defina as seguintes configurações:
+    - **Definition**: `Pipeline script from SCM`
+    - **SCM**: `Git`
+    - **Repository URL**: A URL do seu fork do `hw-app`.
+      - Exemplo: `https://github.com/SEU_USUARIO/hw-app.git`
+    - **Credentials**: Selecione `github-credentials`.
+    - **Branch Specifier**: `*/main`
+    - **Script Path**: `infra/Jenkinsfile`
+4.  Salve o pipeline.
 
-4. Defina validade e marque **Scopes**:
+## 4. Configuração do ArgoCD
 
-   * **repo**
-   * **admin:repo_hook**
+Acesse a interface do ArgoCD e configure-o para observar seu repositório de manifestos.
 
-5. Clique em **Generate token** e **copie** o valor (você verá só uma vez)
+1.  **Obtenha a senha do ArgoCD**:
+    ```bash
+    kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+    ```
 
-6. Adicione **Credentials** no Jenkins:
+2.  **Acesse a interface**: Encaminhe a porta do ArgoCD para o seu `localhost`.
+    ```bash
+    kubectl port-forward svc/argocd-server -n argocd 8443:443
+    ```
+    Acesse [https://localhost:8443](https://localhost:8443) (usuário: `admin`, senha: a que você obteve acima).
 
-   * **Manage Jenkins → Credentials → System → Global → Add Credentials**
-   * **Kind**: Secret text
-   * **Secret**: cole o PAT copiado
-   * **ID**: `github-token`
+3.  **Crie a aplicação**:
+    - Clique em **NEW APP**.
+    - **Application Name**: `hw-app`
+    - **Project**: `default`
+    - **Repository URL**: A URL do seu fork do `hw-k8s`.
+    - **Path**: `manifests`
+    - **Destination Cluster**: `https://kubernetes.default.svc`
+    - **Destination Namespace**: `hw-app` (será criado se não existir)
+    - **Sync Policy**: `Automatic` com a opção `Prune Resources` marcada.
 
-7. Configure GitHub server:
+## 5. Teste o Fluxo Completo
 
-   * **Manage Jenkins → Configure System → GitHub**
-   * **Jenkins URL**: `http://localhost:8080`
-   * **Credentials**: selecione `github-token`
-   * **Test Connection** → OK
+Agora, tudo está pronto. Para testar o pipeline:
 
-## 4. Pipeline Jenkins
+1.  Faça uma alteração em qualquer arquivo no seu repositório `hw-app` local.
+    ```bash
+    # Exemplo: editando o arquivo principal da aplicação
+    # nano src/main.py
+    ```
 
-1. Crie job **Pipeline** `hw-app`.
-2. Em **Build Triggers**, marque **GitHub hook trigger for GITScm polling**.
-3. Em **Pipeline → Definition: Pipeline script from SCM**:
+2.  Faça o commit e o push das alterações:
+    ```bash
+    git add .
+    git commit -m "feat: Testando a pipeline de CI/CD"
+    git push origin main
+    ```
 
-   * SCM: **Git**
-   * Repository URL: `https://github.com/Geninnd/hw-app.git`
-   * Credentials: a mesma que colocou na etapa 6
-   * Branch: ***/main***
-4. Salve.
+O push irá disparar a pipeline no Jenkins, que irá construir a nova imagem, publicá-la no registro local e atualizar o repositório de manifestos. Em seguida, o ArgoCD detectará a mudança e fará o deploy da nova versão no cluster Kubernetes.
 
-## 5. Expor Jenkins com Ngrok
+## 6. Acessando a Aplicação
 
-```bash
-ngrok http http://localhost:8080"
-```
+Depois que o ArgoCD sincronizar a aplicação, você pode acessá-la diretamente no seu navegador.
 
-Copie a URL **HTTPS** que será exibida no terminal (ex: `https://2a69-187-56-94-247.ngrok-free.app`).
+- **Execute o seguinte comando** em seu terminal:
+  ```bash
+  minikube service hw-app -n hw-app
+  ```
+Este comando cria um túnel de acesso ao serviço da aplicação e abre automaticamente a URL no seu navegador padrão. Obs: nao feche o terminal.
 
-## 6. Configurar Webhook do GitHub
+## 7. Troubleshooting
 
-No GitHub de `seu-usuário/hw-app` → **Settings → Webhooks → Add webhook**:
+- **Erro `ImagePullBackOff` no Kubernetes**:
+  - **Causa Comum**: O cluster não consegue encontrar a imagem.
+  - **Verificação**: Certifique-se de que o registro Docker está rodando dentro do Minikube. A pipeline do Jenkins é responsável por atualizar o `deployment.yaml` com o endereço IP correto do registro e a tag da imagem.
+  - **Comando útil**: `kubectl describe pod <NOME_DO_POD> -n hw-app` para ver mais detalhes do erro.
 
-* Payload URL: `https://2a69-187-56-94-247.ngrok-free.app/github-webhook/`
-* Content type: `application/json`
-* Events: `Just the push event`
-* **Sem secret** (não é necessário para uma aplicação local)
+- **Build falhando no Jenkins**:
+  - Verifique os logs da build no Jenkins para identificar o estágio que falhou.
+  - Certifique-se de que todas as credenciais foram criadas com os **IDs corretos**.
 
-> ⚠️ O webhook só funciona com Ngrok ativo.
-
-## 7. Configurar ArgoCD e kubectl
-
-1. Acesse a UI do ArgoCD: abra no navegador `http://<ARGOCD_SERVER>`
-2. Faça login como `admin` e sua senha
-3. No canto superior esquerdo, clique em **+ New App**
-4. Preencha:
-
-   * **Application Name**: `hw-app`
-   * **Project**: `default`
-   * **Repository URL**: `https://github.com/Geninnd/hw-k8s.git`
-   * **Revision**: `main`
-   * **Path**: `.`
-   * **Cluster**: `https://kubernetes.default.svc`
-   * **Namespace**: `default`
-5. Em **Sync Policy**, marque **Automated** (Sync & Prune)
-6. Clique em **Create**
-
----
-A partir de agora, ao **push** na branch `main` do `hw-app`, o Jenkins será acionado via Ngrok, buildará e enviará a imagem ao registry. O ArgoCD detectará a mudança no repositório de manifests `hw-k8s` e sincronizará automaticamente o deployment no cluster Kubernetes.
+- **ArgoCD não sincroniza**:
+  - Acesse a interface do ArgoCD e verifique o status da aplicação `hw-app`.
+  - Use o botão **Refresh** para forçar a verificação do repositório Git e o botão **Sync** para aplicar as mudanças manualmente se necessário.
